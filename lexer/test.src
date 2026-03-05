@@ -1,0 +1,32 @@
+/* Test program for the lexical analyzer */
+
+int x;
+float y;
+bool active;
+string name;
+
+x = 42;
+y = 3.14;
+active = true;
+
+/* another comment */
+
+if (x == 42) {
+    y = y + 1.0;
+}
+
+while (x > 0) {
+    x = x - 1;
+}
+
+int result;
+result = x + 10;
+
+if (active != false) {
+    result = result * 2;
+}
+
+if (x >= 0 && y <= 100.0) {
+    x = x + 1;
+}
+EOF
