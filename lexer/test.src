@@ -1,32 +1,25 @@
-/* Test program for the lexical analyzer */
+-- Test program for the declarative language lexer
 
-int x;
-float y;
-bool active;
-string name;
+-- Simple declarative binding
+result is users where age > 18
 
-x = 42;
-y = 3.14;
-active = true;
+-- Combined restrictions
+active_users is users where age > 18 and active == true
 
-/* another comment */
+-- Structural restriction
+sorted is numbers where every element <= next
 
-if (x == 42) {
-    y = y + 1.0;
-}
+-- Aggregation
+total is sum of prices where category == "food"
 
-while (x > 0) {
-    x = x - 1;
-}
+-- Named rule with from/to
+let shortest_route be path from A to B where distance is min
 
-int result;
-result = x + 10;
+-- Property access and list literal
+filtered is orders where user.region in ["north", "south"]
 
-if (active != false) {
-    result = result * 2;
-}
+-- Arithmetic in expressions
+tax_total is sum of orders.amount where price + tax > 100.0
 
-if (x >= 0 && y <= 100.0) {
-    x = x + 1;
-}
-EOF
+-- Max restriction
+let best_score be results where score is max

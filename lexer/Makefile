@@ -1,22 +1,22 @@
 # ============================================================
-#  Makefile — BASE Language Lexical Analyzer
+# Makefile — Declarative Language Lexical Analyzer
 #
-#  Modules:
-#    symbol_table.asm  — token data and keyword strings
-#    lexer.asm         — DFA logic
-#    main.asm          — entry point and output
+# Modules:
+#   symbol_table.asm  — token data and keyword strings
+#   lexer.asm         — DFA logic
+#   main.asm          — entry point and output
 #
-#  Usage:
-#    make          → build the lexer binary
-#    make run      → build and run with test.src
-#    make clean    → remove build artifacts
+# Usage:
+#   make        → build the lexer binary
+#   make run    → build and run with test.src
+#   make clean  → remove build artifacts
 # ============================================================
 
-ASM    = nasm
-AFLAGS = -f elf64
-LD     = ld
-TARGET = lexer
-SRC    = test.src
+ASM     = nasm
+AFLAGS  = -f elf64
+LD      = ld
+TARGET  = lexer
+SRC     = test.src
 
 OBJECTS = symbol_table.o lexer.o main.o
 
