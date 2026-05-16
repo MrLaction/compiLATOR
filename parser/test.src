@@ -1,0 +1,23 @@
+-- Filter users older than 18
+result is users where age > 18
+
+-- Filter with multiple conditions
+active_users is users where age > 18 and active == true
+
+-- Check ordering
+sorted is numbers where every element <= next
+
+-- Aggregate with condition
+total is sum of prices where category == "food"
+
+-- Find shortest path
+let shortest_route be path from A to B where distance is min
+
+-- Membership test with list
+filtered is orders where user.region in ["north", "south"]
+
+-- Arithmetic in filter
+tax_total is sum of orders.amount where price + tax > 100.0
+
+-- Find maximum
+let best_score be results where score is max
