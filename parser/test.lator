@@ -3,7 +3,6 @@ result is users where age > 18
 
 -- Filter with multiple conditions
 active_users is users where age > 18 and active == true
-
 -- Check ordering
 sorted is numbers where every element <= next
 
