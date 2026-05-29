@@ -98,10 +98,12 @@ compiLATOR/
 │   ├── ast.asm           ← arena allocator for AST nodes
 │   ├── strpool.asm       ← string pool for lexeme persistence
 │   ├── parser.asm        ← LL(1) recursive descent parser
-│   ├── main.asm          ← entry point (parser standalone binary)
+│   ├── symtable.asm      ← symbol table: open-addressing hashtable
+│   ├── semantic.asm      ← AST walker, type inference, semantic checks
+│   ├── main.asm          ← compi CLI entry point
 │   ├── grammar.md        ← formal BNF grammar
 │   ├── Makefile
-│   └── test.src
+│   └── test.lator
 └── README.md
 ```
 
@@ -342,8 +344,9 @@ list_literal   ::= TK_LBRACKET factor (TK_COMMA factor)* TK_RBRACKET
 
 ```bash
 cd parser/
-make run < test.src
-# → syntax OK
+make
+./compi test.lator        # syntax + semantic analysis
+./compi test.lator -s     # syntax only
 ```
 
 On a syntax error:
@@ -356,7 +359,96 @@ parse error: unexpected token on line 3
 
 ## Stage 3 — Semantic Analyzer
 
-**Status: not started.**
+**Status: complete and working.**
+
+The semantic analyzer walks the AST produced by the parser and enforces semantic rules that the grammar cannot express.
+
+### What it checks
+
+- **Redeclaration** — declaring the same name twice in the same program
+- **Type inference** — infers the type of each declared variable from its RHS expression
+- **Type mismatch** — comparing values of incompatible known types in a `where` clause
+
+Identifiers used as data sources (`users`, `orders`, `prices`, etc.) are treated as external collections — they are not required to be declared in the program, since LATOR is a query language that operates over external data.
+
+### Modules
+
+#### `symtable.asm`
+
+Open-addressing hashtable with 256 buckets and 32 bytes per entry:
+
+| Offset | Field      | Purpose                        |
+|--------|------------|--------------------------------|
+| +0     | `name_ptr` | Pointer to interned name string |
+| +8     | `sym_type` | Inferred type (`SYM_*` constant) |
+| +16    | `sym_line` | Declaration line number        |
+| +24    | reserved   |                                |
+
+Hash function: djb2 mod 256. Collision resolution: linear probing.
+
+Exported functions: `sym_insert(name, type, line)`, `sym_lookup(name)`, `sym_hash(name)`.
+
+Inferred types:
+
+| Constant         | Meaning              |
+|------------------|----------------------|
+| `SYM_UNKNOWN`    | Type not inferrable  |
+| `SYM_INT`        | Integer literal RHS  |
+| `SYM_FLOAT`      | Float literal RHS    |
+| `SYM_BOOL`       | Boolean literal RHS  |
+| `SYM_STRING`     | String literal RHS   |
+| `SYM_COLLECTION` | Filter, aggregate, or range expression |
+
+#### `semantic.asm`
+
+Recursive AST walker. One handler per relevant node type. Entry point: `sem_walk(node)`.
+
+Key handlers:
+
+- `NODE_ASSIGN` / `NODE_LET` — walks RHS, infers type, inserts name into symbol table; exits with code 2 on redeclaration
+- `NODE_CMP` — infers type of both sides; exits with code 2 if both are known and incompatible
+- `NODE_ID` — silently accepted (external data sources allowed)
+
+### CLI
+
+The `compi` binary replaces the old `parser` binary:
+
+```bash
+compi <file.lator> [-s] [-v]
+```
+
+| Flag | Effect |
+|------|--------|
+| `-s` | Syntax only — skip semantic analysis |
+| `-v` | Verbose — reserved for future AST dump |
+
+The binary verifies the `.lator` extension before opening the file.
+
+### Error codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | OK |
+| 1 | Syntax error or bad invocation |
+| 2 | Semantic error |
+
+### Build and run
+
+```bash
+cd parser/
+make
+./compi test.lator
+# → syntax OK
+# → semantic OK
+```
+
+Redeclaration error example:
+
+```
+$ ./compi redecl.lator
+syntax OK
+semantic error: 'result' already declared on line 3
+```
 
 ---
 
