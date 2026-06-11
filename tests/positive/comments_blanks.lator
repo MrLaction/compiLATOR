@@ -1,0 +1,7 @@
+-- leading comment
+
+-- another comment, after a blank line
+x is 1
+
+
+y is 2 -- trailing comment

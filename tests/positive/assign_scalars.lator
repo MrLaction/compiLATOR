@@ -1,0 +1,7 @@
+a is 42
+b is 3.14
+c is "hello"
+d is true
+e is -5
+f is (1 + 2) * 3 - 4 / 2
+g is 10 % 3

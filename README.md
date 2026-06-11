@@ -6,6 +6,8 @@ A compiler built from scratch in x86-64 assembly (NASM) for a custom declarative
 
 ## Language
 
+The normative language definition lives in [SPEC.md](SPEC.md). What follows is an informal overview.
+
 The language is a **declarative, query-oriented** language designed to express data transformations, filters, and aggregations in a readable, natural-language-like syntax. Statements are terminated by newlines (`\n`), and line comments use `--`.
 
 ### Philosophy
@@ -65,10 +67,7 @@ active_users is users where age > 18 and active == true
 sorted is numbers where every element <= next
 
 -- Aggregate with condition
-total is sum of prices where category == "food"
-
--- Find shortest path
-let shortest_route be path from A to B where distance is min
+total is sum of prices.value where category == "food"
 
 -- Membership test with list
 filtered is orders where user.region in ["north", "south"]
@@ -79,6 +78,10 @@ tax_total is sum of orders.amount where price + tax > 100.0
 -- Find maximum
 let best_score be results where score is max
 ```
+
+### Reserved constructs (v1.1)
+
+`path from A to B where distance is min` (graph search) parses but is rejected with an explicit semantic error in v1.0. The `=` token is also reserved. See SPEC.md §8.
 
 ---
 

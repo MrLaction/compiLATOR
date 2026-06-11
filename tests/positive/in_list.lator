@@ -1,0 +1,2 @@
+f is orders where user.region in ["north", "south", "east"]
+n is users where age in [18, 21, 65]
