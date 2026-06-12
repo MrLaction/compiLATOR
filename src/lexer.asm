@@ -8,6 +8,7 @@
 ;Exports:
 ;  get_token            rax = token ID, fills lexeme[]
 ;  lexeme, lexeme_len   current token text and length
+;  tok_line             1-based source line of the current token
 ;
 ;Imports (symbol_table.asm): kw_* keyword strings for lookup.
 
@@ -16,7 +17,7 @@ default abs
 SYS_READ    equ 0
 STDIN       equ 0
 
-;── Token IDs ──────────────────────────────────────────────
+; Token IDs
 ;Duplicated here so lexer.asm compiles standalone.
 ;Single source of truth is symbol_table.asm — keep in sync.
 
@@ -69,19 +70,20 @@ TK_NEWLINE      equ 40
 TK_EOF          equ 41
 TK_ERROR        equ 42
 
-;── Buffer sizes ────────────────────────────────────────────
+; Buffer sizes
 BUF_SIZE    equ 4096
 LEXEME_MAX  equ 256
 
-;── Imported data (symbol_table.asm) ────────────────────────
+; Imported data (symbol_table.asm)
 extern kw_is, kw_where, kw_and, kw_or, kw_not
 extern kw_every, kw_in, kw_of, kw_let, kw_be
 extern kw_from, kw_to, kw_min, kw_max, kw_sum
 extern kw_true, kw_false
 
-;── Exported symbols ────────────────────────────────────────
+; Exported symbols
 global get_token
 global lexeme, lexeme_len
+global tok_line
 
 section .bss
 
@@ -93,6 +95,8 @@ buf_len     resq 1
 ;Putback register — 1-character lookahead
 putback     resb 1
 has_putback resb 1
+nl_count    resq 1              ;newlines consumed so far (net of putbacks)
+tok_line    resq 1              ;1-based line where the current token starts
 
 ;Current lexeme — exported so main.asm can print it
 lexeme      resb LEXEME_MAX
@@ -116,7 +120,7 @@ get_token:
     mov  qword [lexeme_len], 0
     mov  byte  [lexeme], 0
 
-;── State S0: skip whitespace (spaces and tabs only) ───────
+;State S0: skip whitespace (spaces and tabs only)
 ;Newlines are NOT skipped — they are tokens (TK_NEWLINE).
 .s0_skip_ws:
     call next_char
@@ -130,11 +134,19 @@ get_token:
     cmp  al, 13             ;carriage return — skip silently
     je   .s0_skip_ws
 
-;── Newline → TK_NEWLINE ───────────────────────────────────
+; Newline → TK_NEWLINE
     cmp  al, 10
     je   .emit_newline
 
-;── Classify first character ───────────────────────────────
+    ;B1: ordinary token — record its 1-based starting line.
+    ;al holds the just-read character: preserve it across the stamp.
+    push rax
+    mov  rax, [nl_count]
+    inc  rax
+    mov  [tok_line], rax
+    pop  rax
+
+; Classify first character
 
     ;[a-zA-Z_] → identifier or keyword (S1)
     call is_alpha_or_under
@@ -195,8 +207,11 @@ get_token:
     mov  rax, TK_ERROR
     jmp  .done
 
-;── Emit newline token ─────────────────────────────────────
+; Emit newline token
 .emit_newline:
+    ;B1: a NEWLINE token reports the line it terminates
+    mov  rax, [nl_count]
+    mov  [tok_line], rax
     mov  byte [lexeme], '\'
     mov  byte [lexeme+1], 'n'
     mov  byte [lexeme+2], 0
@@ -204,7 +219,7 @@ get_token:
     mov  rax, TK_NEWLINE
     jmp  .done
 
-;── S1: Identifier / Reserved word ─────────────────────────
+; S1: Identifier / Reserved word
 .state_id:
     call append_char
 .id_loop:
@@ -222,7 +237,7 @@ get_token:
     call lookup_keyword         ;rax = TK_* or TK_ID
     jmp  .done
 
-;── S2/S3/S4: Integer or float literal ─────────────────────
+; S2/S3/S4: Integer or float literal
 .state_number:
     call append_char
 .num_int_loop:
@@ -268,7 +283,7 @@ get_token:
     mov  rax, TK_LIT_INT
     jmp  .done
 
-;── S5/S6: String literal ──────────────────────────────────
+; S5/S6: String literal
 .state_string:
     ;Opening '"' is not stored in lexeme
 .str_loop:
@@ -288,7 +303,7 @@ get_token:
     mov  rax, TK_ERROR
     jmp  .done
 
-;── '=' or '==' ────────────────────────────────────────────
+; '=' or '=='
 .state_eq:
     call next_char
     cmp  al, '='
@@ -307,7 +322,7 @@ get_token:
     mov  rax, TK_ASSIGN
     jmp  .done
 
-;── '!=' ───────────────────────────────────────────────────
+; '!='
 .state_bang:
     call next_char
     cmp  al, '='
@@ -327,7 +342,7 @@ get_token:
     mov  rax, TK_ERROR
     jmp  .done
 
-;── '<' or '<=' ────────────────────────────────────────────
+; '<' or '<='
 .state_lt:
     call next_char
     cmp  al, '='
@@ -346,7 +361,7 @@ get_token:
     mov  rax, TK_LESS
     jmp  .done
 
-;── '>' or '>=' ────────────────────────────────────────────
+; '>' or '>='
 .state_gt:
     call next_char
     cmp  al, '='
@@ -365,7 +380,7 @@ get_token:
     mov  rax, TK_GREATER
     jmp  .done
 
-;── '-' or '--' (line comment) ─────────────────────────────
+; '-' or '--' (line comment)
 .state_minus:
     call next_char
     cmp  al, '-'
@@ -402,7 +417,7 @@ get_token:
     pop  rbp
     jmp  get_token
 
-;── Single-character symbols ───────────────────────────────
+; Single-character symbols
 %macro single_tok 2         ;%1 = ascii char, %2 = token ID
     mov  byte [lexeme], %1
     mov  byte [lexeme+1], 0
@@ -423,6 +438,9 @@ get_token:
 .single_dot:        single_tok '.', TK_DOT
 
 .emit_eof:
+    mov  rax, [nl_count]
+    inc  rax
+    mov  [tok_line], rax
     mov  byte [lexeme], 0
     mov  qword [lexeme_len], 0
     mov  rax, TK_EOF
@@ -438,6 +456,10 @@ next_char:
     jne  .from_buffer
     mov  byte [has_putback], 0
     mov  al, [putback]
+    cmp  al, 10
+    jne  .ret_pb
+    inc  qword [nl_count]
+.ret_pb:
     ret
 
 .from_buffer:
@@ -461,6 +483,10 @@ next_char:
     mov  al, [buf + rcx]
     inc  rcx
     mov  [buf_pos], rcx
+    cmp  al, 10
+    jne  .ret_buf
+    inc  qword [nl_count]
+.ret_buf:
     ret
 
 .eof:
@@ -470,6 +496,10 @@ next_char:
 ;putback_char — Push one character back into the stream
 ;Input: al = character to push back
 putback_char:
+    cmp  al, 10
+    jne  .store
+    dec  qword [nl_count]
+.store:
     mov  [putback], al
     mov  byte [has_putback], 1
     ret

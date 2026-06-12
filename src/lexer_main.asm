@@ -14,10 +14,10 @@ SYS_WRITE   equ 1
 SYS_EXIT    equ 60
 STDOUT      equ 1
 
-;── Token IDs needed here ──────────────────────────────────
+; Token IDs needed here
 TK_EOF      equ 41
 
-;── Imported symbols ───────────────────────────────────────
+; Imported symbols
 extern get_token
 extern lexeme
 extern tk_name_table

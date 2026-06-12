@@ -66,7 +66,7 @@ TK_ERROR        equ 42
 
 section .data
 
-;── Keyword strings ────────────────────────────────────────
+; Keyword strings
 ;Used by lexer.asm → lookup_keyword to classify identifiers.
 ;Each string is null-terminated.
 
@@ -93,7 +93,7 @@ kw_sum      db 'sum', 0
 kw_true     db 'true', 0
 kw_false    db 'false', 0
 
-;── Token name strings ─────────────────────────────────────
+; Token name strings
 ;Padded to fixed width for aligned output.
 
 global str_tk_is, str_tk_where, str_tk_and, str_tk_or, str_tk_not
@@ -152,7 +152,7 @@ str_tk_newline      db 'TK_NEWLINE      ', 0
 str_tk_eof          db 'TK_EOF          ', 0
 str_tk_error        db 'TK_ERROR        ', 0
 
-;── Output formatting strings ──────────────────────────────
+; Output formatting strings
 global str_arrow, str_close, str_header
 
 str_arrow   db ' --> [', 0
@@ -161,7 +161,7 @@ str_header  db '=== LEXICAL ANALYZER — Declarative Language ===', 10
             db 'TOKEN            LEXEME', 10
             db 10, 0
 
-;── Token name pointer table ───────────────────────────────
+; Token name pointer table
 ;Indexed by token ID (1-based).
 global tk_name_table
 

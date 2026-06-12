@@ -15,7 +15,7 @@ SYS_WRITE  equ 1
 SYS_EXIT   equ 60
 STDERR     equ 2
 
-;── Node type constants (must match ast.asm) ─────────────────
+; Node type constants (must match ast.asm)
 NODE_PROGRAM    equ 1
 NODE_ASSIGN     equ 2
 NODE_LET        equ 3
@@ -40,14 +40,14 @@ NODE_LIT_STR    equ 21
 NODE_LIT_BOOL   equ 22
 NODE_STMT_LIST  equ 23
 
-;── AST node field offsets (must match ast.asm) ──────────────
+; AST node field offsets (must match ast.asm)
 NODE_TYPE  equ 0
 NODE_LEFT  equ 8
 NODE_RIGHT equ 16
 NODE_VALUE equ 24
 NODE_LINE  equ 32
 
-;── Symbol types (must match symtable.asm) ───────────────────
+; Symbol types (must match symtable.asm)
 SYM_UNKNOWN    equ 0
 SYM_INT        equ 1
 SYM_FLOAT      equ 2
@@ -70,10 +70,10 @@ section .text
 
 global sem_walk
 
-;─────────────────────────────────────────────────────────────
+;
 ;sem_walk(rdi = node pointer)
 ;Recursively walks the AST. Calls SYS_EXIT(2) on semantic error.
-;─────────────────────────────────────────────────────────────
+;
 sem_walk:
     test rdi, rdi
     jz   .done              ;null node: nothing to do
@@ -249,10 +249,10 @@ sem_walk:
 .done:
     ret
 
-;─────────────────────────────────────────────────────────────
+;
 ;sem_infer_type(rdi = node pointer) -> rax = SYM_* constant
 ;Does NOT recurse into children — only inspects node type.
-;─────────────────────────────────────────────────────────────
+;
 sem_infer_type:
     test rdi, rdi
     jz   .unknown
@@ -333,11 +333,11 @@ sem_infer_type:
     pop  rdi
     ret
 
-;─────────────────────────────────────────────────────────────
+;
 ;err_already_declared(rdi = name_ptr, rsi = line)
 ;prints: semantic error: 'name' already declared on line N
 ;exits with code 2
-;─────────────────────────────────────────────────────────────
+;
 err_already_declared:
     push r12
     push r13
@@ -357,9 +357,9 @@ err_already_declared:
     mov  rdi, 2
     syscall
 
-;─────────────────────────────────────────────────────────────
+;
 ;err_not_defined(rdi = name_ptr, rsi = line)
-;─────────────────────────────────────────────────────────────
+;
 err_not_defined:
     push r12
     push r13
@@ -379,9 +379,9 @@ err_not_defined:
     mov  rdi, 2
     syscall
 
-;─────────────────────────────────────────────────────────────
+;
 ;err_type_mismatch(rdi = line)
-;─────────────────────────────────────────────────────────────
+;
 err_type_mismatch:
     push r12
     mov  r12, rdi
@@ -395,9 +395,9 @@ err_type_mismatch:
     mov  rdi, 2
     syscall
 
-;─────────────────────────────────────────────────────────────
+;
 ;print_str(rdi = null-terminated string) -> stderr
-;─────────────────────────────────────────────────────────────
+;
 print_str:
     push rbx
     push rcx
@@ -418,9 +418,9 @@ print_str:
     pop  rbx
     ret
 
-;─────────────────────────────────────────────────────────────
+;
 ;print_uint_nl(rdi = unsigned integer) -> stderr, followed by newline
-;─────────────────────────────────────────────────────────────
+;
 print_uint_nl:
     push rbp
     mov  rbp, rsp

@@ -92,7 +92,7 @@ _start:
     mov  rdi, r15
     syscall
 
-    ;── Stage 2: syntax analysis ──────────────────────────────
+    ; Stage 2: syntax analysis
     call parse_program      ;rax = root AST node
     mov  r15, rax           ;r15 = root (preserved across syscalls)
 
@@ -106,7 +106,7 @@ _start:
     cmp  byte [flag_synonly], 1
     je   .exit_ok
 
-    ;── Stage 3: semantic analysis ────────────────────────────
+    ; Stage 3: semantic analysis
     mov  rdi, r15           ;root AST node
     call sem_walk           ;errors call SYS_EXIT(2) internally
 
@@ -149,7 +149,7 @@ _start:
     mov  rdi, 1
     syscall
 
-;─────────────────────────────────────────────────────────────
+;
 parse_flag:
     cmp  byte [rdi],   '-'
     jne  .done
@@ -168,7 +168,7 @@ parse_flag:
 .done:
     ret
 
-;─────────────────────────────────────────────────────────────
+;
 check_ext:
     push rbx
     push rcx

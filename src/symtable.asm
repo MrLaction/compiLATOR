@@ -17,7 +17,7 @@ SYM_BOOL       equ 3
 SYM_STRING     equ 4
 SYM_COLLECTION equ 5
 
-;── Table layout ─────────────────────────────────────────────
+; Table layout
 SYM_ENTRY_SIZE equ 32
 SYM_CAPACITY   equ 256
 SYM_NAME       equ 0
@@ -33,10 +33,10 @@ global sym_insert
 global sym_lookup
 global sym_hash
 
-;─────────────────────────────────────────────────────────────
+;
 ;sym_hash(rdi = name_ptr) -> rax = index [0, 255]
 ;djb2: hash = ((hash * 33) ^ byte) mod 256
-;─────────────────────────────────────────────────────────────
+;
 sym_hash:
     mov  rax, 5381          ;djb2 seed
     xor  rcx, rcx
@@ -52,9 +52,9 @@ sym_hash:
     and  rax, 0xFF          ;mod 256
     ret
 
-;─────────────────────────────────────────────────────────────
+;
 ;sym_lookup(rdi = name_ptr) -> rax = entry pointer, or 0 if not found
-;─────────────────────────────────────────────────────────────
+;
 sym_lookup:
     push rbx
     push r12
@@ -101,10 +101,10 @@ sym_lookup:
     pop  rbx
     ret
 
-;─────────────────────────────────────────────────────────────
+;
 ;sym_insert(rdi = name_ptr, rsi = type, rdx = line)
 ;-> rax: 0 = inserted OK, 1 = already declared (redeclaration)
-;─────────────────────────────────────────────────────────────
+;
 sym_insert:
     push rbx
     push r12
@@ -157,9 +157,9 @@ sym_insert:
     pop  rbx
     ret
 
-;─────────────────────────────────────────────────────────────
+;
 ;str_eq(rdi = a, rsi = b) -> CF=1 if equal, CF=0 if not
-;─────────────────────────────────────────────────────────────
+;
 str_eq:
     push rcx
     xor  rcx, rcx

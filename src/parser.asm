@@ -65,6 +65,7 @@ TK_ERROR     equ 42
 extern get_token
 extern lexeme
 extern lexeme_len
+extern tok_line                     ;B1: 1-based line of the current token (lexer.asm)
 
 ;Imports from strpool
 extern intern_str
@@ -76,7 +77,6 @@ extern alloc_node
 section .bss
     cur_token   resq 1
     cur_lexeme  resq 1              ;pointer to interned string of current lexeme
-    cur_line    resq 1              ;current line counter
 
 section .data
     err_unexpected  db "parse error: unexpected token on line ", 0
@@ -102,14 +102,6 @@ advance:
 
     call get_token                  ;rax = token type
     mov  [cur_token], rax
-
-    ;update line counter on newline
-    cmp  rax, TK_NEWLINE
-    jne  .no_newline
-    mov  rbx, [cur_line]
-    inc  rbx
-    mov  [cur_line], rbx
-.no_newline:
 
     ;intern the current lexeme string
     lea  rdi, [lexeme]
@@ -155,7 +147,7 @@ syntax_error:
     syscall
 
     ;print line number (decimal)
-    mov  rdi, [cur_line]
+    mov  rdi, [tok_line]
     call print_uint
 
     ;print newline
@@ -246,61 +238,58 @@ parse_program:
     push r13
     push r14
 
-    ;Inicializar contador de líneas
-    mov  qword [cur_line], 1
-
-    ;Cargar el primer token del archivo
+    ;Load the first token
     call advance
 
-    ;Alojar nodo raíz
+    ;Allocate the root node
     mov  rdi, NODE_PROGRAM
     mov  rsi, 1
     call alloc_node
-    mov  r12, rax                   ;r12 = nodo raíz del programa
+    mov  r12, rax                   ;r12 = program root node
 
     xor  r13, r13                   ;r13 = puntero al último NODE_STMT_LIST
 
 .stmt_loop:
     mov  rax, [cur_token]
 
-    ;1. FILTRO DE LÍNEAS VACÍAS: Si es un salto de línea, lo consumimos aquí
-    ;de manera centralizada y volvemos a evaluar.
+    ;1. Blank-line filter: newline tokens are consumed here, centrally,
+    ;and the loop re-evaluates.
     cmp  rax, TK_NEWLINE
     je   .skip_newline
 
-    ;2. Si es fin de archivo, terminamos pacíficamente
+    ;2. End of file: finish cleanly
     cmp  rax, TK_EOF
     je   .done
 
-    ;3. Si no es vacío ni EOF, tiene que ser una instrucción real (ID o LET).
-    call parse_statement            ;rax = nodo de la sentencia armada
+    ;3. Neither blank nor EOF: must be a real statement (ID or LET).
+    call parse_statement            ;rax = parsed statement node
     mov  r14, rax
 
     ;Envolver el resultado en un NODE_STMT_LIST
     mov  rdi, NODE_STMT_LIST
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_LEFT], r14   ;Miembro izquierdo = la sentencia
 
-    ;Enlazar en la lista general del programa
+    ;Link into the program's statement list
     test r13, r13
     jz   .first_stmt
 
-    mov  qword [r13 + NODE_RIGHT], rax  ;Lo pegamos al final de la cadena anterior
+    mov  qword [r13 + NODE_RIGHT], rax  ;append to the end of the chain
     mov  r13, rax
     jmp  .stmt_loop
 
 .first_stmt:
-    mov  qword [r12 + NODE_LEFT], rax   ;Primer eslabón del programa
+    mov  qword [r12 + NODE_LEFT], rax   ;first link of the program
     mov  r13, rax
     jmp  .stmt_loop
 
 .skip_newline:
-    call advance                    ;Consumimos el salto de línea vacío de forma segura
-    jmp  .stmt_loop                 ;Reevaluamos el siguiente token
+    call advance                    ;consume the blank newline safely
+    jmp  .stmt_loop                 ;re-evaluate the next token
 
 .done:
-    mov  rax, r12                   ;Retornamos la raíz del AST completa
+    mov  rax, r12                   ;return the complete AST root
 
     pop  r14
     pop  r13
@@ -362,29 +351,29 @@ parse_assignment:
     push r13
 
     ;REGLA DE ORO: cur_token YA ES TK_ID (verificado por el llamador).
-    ;No llamamos a advance al entrar. Procesamos el ID de inmediato.
+    ;advance is not called on entry; the ID is processed immediately.
     mov  rdi, NODE_ID
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  r12, rax                    ;r12 = id node
 
     mov  rax, [cur_lexeme]
-    mov  qword [r12 + NODE_VALUE], rax  ;Guardamos el lexema antes de que advance lo pise
+    mov  qword [r12 + NODE_VALUE], rax  ;save the lexeme before advance clobbers it
 
-    ;1. Avanzamos explícitamente hacia lo que debería ser el TK_IS
+    ;1. Advance explicitly toward what must be TK_IS
     call advance
     mov  rdi, TK_IS
     call expect                     ;Verifica si cur_token == TK_IS (no avanza)
 
     call advance
-    call parse_expr                 ;Parseamos la expresión
+    call parse_expr                 ;parse the expression
     mov  r13, rax                   ;r13 = expr node
 
-    ;REGLA DE RETORNO: parse_expr ya dejó cargado en cur_token el
-    ;primer elemento fuera de él (que debería ser TK_NEWLINE)
+    ;Return contract: parse_expr leaves cur_token on the first
+    ;token past the expression (normally TK_NEWLINE)
 
     mov  rdi, NODE_ASSIGN
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_LEFT],  r12
     mov  qword [rax + NODE_RIGHT], r13
@@ -414,7 +403,7 @@ parse_let_binding:
 .got_id:
     ;allocate ID node
     mov  rdi, NODE_ID
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  r12, rax
 
@@ -431,7 +420,7 @@ parse_let_binding:
 
     ;build NODE_LET
     mov  rdi, NODE_LET
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_LEFT],  r12
     mov  qword [rax + NODE_RIGHT], r13
@@ -441,7 +430,7 @@ parse_let_binding:
     pop  rbp
     ret
 
-;parse_expr() -> rax = Nodo resultante del AST
+;parse_expr() -> rax = resulting AST node
 ;expr ::= aggregate_expr | range_expr | arith_expr (con WHERE opcional)
 parse_expr:
     push rbp
@@ -451,7 +440,7 @@ parse_expr:
 
     mov  rax, [cur_token]
 
-    ;1. ¿Es una expresión de agregación?
+    ;1. Aggregation expression?
     cmp  rax, TK_SUM
     je   near .do_aggregate
     cmp  rax, TK_MIN
@@ -481,16 +470,16 @@ parse_expr:
     call parse_arith_expr
     mov  r12, rax                   ;r12 = base arith node
 
-    ;Absorción estricta del WHERE
+    ;strict WHERE absorption
     mov  rax, [cur_token]
     cmp  rax, TK_WHERE
     jne  near .no_filter
 
-    call parse_filter_clause        ;rax = nodo de la condición
-    mov  r13, rax                   ;r13 = condición
+    call parse_filter_clause        ;rax = condition node
+    mov  r13, rax                   ;r13 = condition
 
     mov  rdi, NODE_FILTER
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_LEFT],  r12
     mov  qword [rax + NODE_RIGHT], r13
@@ -511,12 +500,12 @@ parse_aggregate_expr:
     push rbp
     mov  rbp, rsp
     push r12                    ;r12 = guardar token op original (SUM/MIN/MAX)
-    push r13                    ;r13 = nodo del identificador de colección
-    push r14                    ;r14 = nodo del filtro (si existe)
+    push r13                    ;r13 = collection identifier node
+    push r14                    ;r14 = filter node (if any)
 
     ;cur_token ya es agg_op (TK_SUM, TK_MIN o TK_MAX) verificado por expr
     mov  rax, [cur_token]
-    mov  r12, rax               ;Guardamos el token de operación
+    mov  r12, rax               ;save the aggregation operator token
     call advance                ;Consumimos agg_op
 
     ;Forzar TK_OF
@@ -524,7 +513,7 @@ parse_aggregate_expr:
     call expect
     call advance                ;Consumimos TK_OF
 
-    ;Forzar TK_ID (Nombre de la colección — puede ser dotted: orders.amount)
+    ;require TK_ID (collection name — may be dotted: orders.amount)
     call parse_access_expr          ;handles TK_ID and TK_ID.TK_ID chains
     mov  r13, rax                   ;r13 = access node
 
@@ -533,20 +522,20 @@ parse_aggregate_expr:
 
     mov  rax, [cur_token]
     cmp  rax, TK_WHERE
-    jne  .build_node            ;Si no es WHERE, saltamos directo a armar el nodo
+    jne  .build_node            ;no WHERE: build the node directly
 
-    ;Si es WHERE, procesamos la cláusula de filtro completa
-    ;Nota: Como filter_clause ::= TK_WHERE condition, pasamos directo
-    call parse_filter_clause    ;Esta función consume el WHERE internamente y parsea la condición
+    ;WHERE present: parse the full filter clause
+    ;note: filter_clause ::= TK_WHERE condition, so control passes straight through
+    call parse_filter_clause    ;consumes the WHERE itself and parses the condition
     mov  r14, rax               ;r14 = NODE_FILTER retornado
 
 .build_node:
-    ;Construimos el nodo agregador principal NODE_AGGR
+    ;build the main NODE_AGGR aggregate node
     mov  rdi, NODE_AGGR
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
-    mov  qword [rax + NODE_VALUE], r12  ;Guardamos el token de agregación
-    mov  qword [rax + NODE_LEFT],  r13  ;Miembro izquierdo = ID de colección
+    mov  qword [rax + NODE_VALUE], r12  ;aggregation operator token
+    mov  qword [rax + NODE_LEFT],  r13  ;left member = collection ID
     mov  qword [rax + NODE_RIGHT], r14  ;Miembro derecho = filtro o 0
 
     pop  r14
@@ -589,7 +578,7 @@ parse_range_expr:
 
 .got_from_id:
     mov  rdi, NODE_ID
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  r12, rax
     mov  rbx, [cur_lexeme]
@@ -610,7 +599,7 @@ parse_range_expr:
 
 .got_to_id:
     mov  rdi, NODE_ID
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  r13, rax
     mov  rbx, [cur_lexeme]
@@ -628,7 +617,7 @@ parse_range_expr:
 
 .no_filter:
     mov  rdi, NODE_RANGE
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_LEFT],  r12
     mov  qword [rax + NODE_RIGHT], r13
@@ -639,7 +628,7 @@ parse_range_expr:
     pop  rbp
     ret
 
-;parse_filter_clause() -> rax = Nodo de la condición
+;parse_filter_clause() -> rax = condition node
 ;filter_clause ::= TK_WHERE condition
 parse_filter_clause:
     push rbp
@@ -648,7 +637,7 @@ parse_filter_clause:
     ;cur_token es TK_WHERE. Lo consumimos obligatoriamente.
     call advance
 
-    ;Parseamos la condición (que procesa ORs, ANDs y comparaciones)
+    ;parse the condition (handles ORs, ANDs and comparisons)
     call parse_condition
 
     pop  rbp
@@ -675,7 +664,7 @@ parse_condition:
     mov  r13, rax                   ;r13 = right
 
     mov  rdi, NODE_COND_OR
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_LEFT],  r12
     mov  qword [rax + NODE_RIGHT], r13
@@ -710,7 +699,7 @@ parse_cond_term:
     mov  r13, rax
 
     mov  rdi, NODE_COND_AND
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_LEFT],  r12
     mov  qword [rax + NODE_RIGHT], r13
@@ -744,7 +733,7 @@ parse_cond_factor:
     call parse_cond_factor
     mov  r12, rax
     mov  rdi, NODE_COND_NOT
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_LEFT], r12
     jmp  .done
@@ -767,10 +756,10 @@ parse_cond_factor:
     mov  rax, [cur_token]
     cmp  rax, TK_ID
     jne  .syntax_error
-    call advance                    ;Consume 'next' (Compensación LL(1) crítica)
+    call advance                    ;consume 'next' (critical LL(1) compensation)
 
     mov  rdi, NODE_COND_EVERY
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     jmp  .done
 
@@ -786,7 +775,7 @@ parse_cond_factor:
     mov  r13, rax                   ;r13 = list_literal node
 
     mov  rdi, NODE_IN_TEST
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_LEFT],  r12
     mov  qword [rax + NODE_RIGHT], r13
@@ -811,14 +800,14 @@ parse_cond_factor:
     call advance                    ;Consume el extremo
 
     mov  rdi, NODE_IS_EXTREME
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_LEFT],  r12
     mov  qword [rax + NODE_VALUE], r13
     jmp  .done
 
 .not_is_extreme:
-    mov  rdi, r12                   ;rdi = LHS pasado a la comparación
+    mov  rdi, r12                   ;rdi = LHS handed to the comparison
     call parse_comparison_with_lhs
     jmp  .done
 
@@ -842,7 +831,7 @@ parse_comparison_with_lhs:
     push r13
     push r14
 
-    mov  r12, rdi                   ;r12 = nodo del lado izquierdo (LHS)
+    mov  r12, rdi                   ;r12 = left-hand side node (LHS)
 
     ;Validar y guardar el operador relacional (relop)
     mov  rax, [cur_token]
@@ -863,26 +852,25 @@ parse_comparison_with_lhs:
     call syntax_error
 
 .got_op:
-    mov  r13, rax                   ;r13 = token del operador relacional
+    mov  r13, rax                   ;r13 = relational operator token
     call advance                    ;Consumimos el operador relacional
 
-    ;Parseamos el lado derecho (RHS).
-    ;Usamos parse_factor porque el RHS puede ser un ID o un literal (ej. 18 o "food")
+    ;Parse the right-hand side (RHS).
+    ;parse_factor: the RHS may be an ID or a literal (e.g. 18 or "food")
     call parse_factor
-    mov  r14, rax                   ;r14 = nodo del lado derecho (RHS)
+    mov  r14, rax                   ;r14 = right-hand side node (RHS)
 
-    ;!!! LOOKAHEAD COMPENSADO !!!
-    ;Como parse_factor internamente YA hizo un 'call advance' al terminar de leer
-    ;el entero/string, cur_token ya está apuntando al token de control que sigue
-    ;(como TK_NEWLINE, TK_AND, o TK_OR). NO debemos avanzar aquí.
+    ;Lookahead already compensated: parse_factor calls advance after reading
+    ;the literal/ID, so cur_token already points at the following control
+    ;token (TK_NEWLINE, TK_AND or TK_OR). Do NOT advance here.
 
-    ;Construimos el nodo de comparación NODE_CMP
+    ;build the NODE_CMP comparison node
     mov  rdi, NODE_CMP
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_LEFT],  r12  ;Miembro izquierdo (LHS)
     mov  qword [rax + NODE_RIGHT], r14  ;Miembro derecho (RHS)
-    mov  qword [rax + NODE_VALUE], r13  ;Token del operador
+    mov  qword [rax + NODE_VALUE], r13  ;operator token
 
     pop  r14
     pop  r13
@@ -903,7 +891,7 @@ parse_access_expr:
     jne  .err_not_id
 
     mov  rdi, NODE_ID
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  r12, rax
     mov  rbx, [cur_lexeme]
@@ -916,7 +904,7 @@ parse_access_expr:
     jne  .no_dots
 
     mov  rdi, NODE_ACCESS
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  r13, rax
     mov  qword [r13 + NODE_LEFT], r12
@@ -934,7 +922,7 @@ parse_access_expr:
     jne  .err_not_id
 
     mov  rdi, NODE_ID
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  r12, rax
     mov  rcx, [cur_lexeme]
@@ -963,7 +951,7 @@ parse_access_expr:
     mov  rdi, TK_ID
     call syntax_error
 
-;parse_list_literal() -> rax = primer NODE_LIST de la cadena
+;parse_list_literal() -> rax = first NODE_LIST of the chain
 ;list_literal ::= TK_LBRACKET list_items TK_RBRACKET
 ;list_items   ::= literal (TK_COMMA literal)*
 parse_list_literal:
@@ -979,7 +967,7 @@ parse_list_literal:
     mov  rbx, rax
 
     mov  rdi, NODE_LIST
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  r13, rax               ;Head
     mov  r12, rax               ;Tail
@@ -1004,7 +992,7 @@ parse_list_literal:
     mov  rbx, rax
 
     mov  rdi, NODE_LIST
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  r14, rax
     mov  qword [r14 + NODE_LEFT],  rbx
@@ -1050,7 +1038,7 @@ parse_arith_expr:
     mov  rbx, rax
 
     mov  rdi, NODE_BINOP
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_LEFT],  r12
     mov  qword [rax + NODE_RIGHT], rbx
@@ -1093,7 +1081,7 @@ parse_term:
     mov  rbx, rax
 
     mov  rdi, NODE_BINOP
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_LEFT],  r12
     mov  qword [rax + NODE_RIGHT], rbx
@@ -1145,7 +1133,7 @@ parse_factor:
     call parse_factor
     mov  r12, rax
     mov  rdi, NODE_UNOP
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_LEFT], r12
     jmp  .done
@@ -1155,7 +1143,7 @@ parse_factor:
     cmp  rax, TK_LIT_INT
     jne  .not_int
     mov  rdi, NODE_LIT_INT
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  r12, rax
     ;convert lexeme string to integer
@@ -1171,7 +1159,7 @@ parse_factor:
     cmp  rax, TK_LIT_FLOAT
     jne  .not_float
     mov  rdi, NODE_LIT_FLOAT
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  r12, rax
     mov  rbx, [cur_lexeme]
@@ -1185,7 +1173,7 @@ parse_factor:
     cmp  rax, TK_LIT_STR
     jne  .not_str
     mov  rdi, NODE_LIT_STR
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  r12, rax
     mov  rbx, [cur_lexeme]
@@ -1199,7 +1187,7 @@ parse_factor:
     cmp  rax, TK_TRUE
     jne  .not_true
     mov  rdi, NODE_LIT_BOOL
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_VALUE], 1
     call advance
@@ -1210,7 +1198,7 @@ parse_factor:
     cmp  rax, TK_FALSE
     jne  .not_false
     mov  rdi, NODE_LIT_BOOL
-    mov  rsi, [cur_line]
+    mov  rsi, [tok_line]
     call alloc_node
     mov  qword [rax + NODE_VALUE], 0
     call advance

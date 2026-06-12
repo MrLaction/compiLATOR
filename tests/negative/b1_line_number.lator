@@ -1,0 +1,5 @@
+-- header comment
+x is 5 -- trailing comment
+
+
+x is 6

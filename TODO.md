@@ -35,8 +35,8 @@ Exit codes: 0 OK · 1 syntax · 2 semantic · 3 runtime (compiled program) · 97
 
 Defects below were reproduced against the current build. Write the failing test first, then fix.
 
-- [ ] **T1 — Test harness first.** `tests/` with `*.lator` + expected stdout/stderr + exit code; `run_tests.sh`; `make test` at repo root. Positive and negative cases, one feature per file.
-- [ ] **B1 — Line numbers off by one** in all statement-level errors. Fix: move line tracking into the lexer — export a per-token starting line; delete the counter from `advance()` in parser.asm.
+- [x] **T1 — Test harness.** Three tiers: `tests/positive` + `tests/negative` (regression floor, must stay green), `tests/xfail` (SPEC-mandated, currently failing; one test per B-item; an XPASS means a fix landed and the test must be promoted). Sidecars: `.exit` (required), `.out` (exact stdout), `.err` (stderr substrings). Custom `.sh` cases for CLI checks; lexer output golden. `make test` at repo root. CSV fixtures in `tests/data/` (forward-compatible with Phase 2 schema resolution). Status: 16 pass / 10 xfail / 0 fail.
+- [x] **B1 — DONE. Line tracking lives in the lexer.** `nl_count` net of putbacks; per-token `tok_line` (NEWLINE = line it terminates, EOF = cursor line); parser's `cur_line` deleted, all sites read `tok_line`. Incident: first version clobbered AL with the stamp and broke all tokenization — 12 suite failures; fixed with push/pop rax. Test promoted to `negative/b1_line_number`; line numbers pinned across the negative tier.
 - [ ] **B2 — Unified expression grammar.** Replace the split condition/arith grammar with one precedence ladder (or < and < not < rel < add < mul < unary < primary, SPEC §2): `(` always opens `expr`; ill-typed forms like `(a > b) + 1` are rejected by B3's type checker, not the grammar. Comparison is non-associative. Net effect: parenthesized conditions work and parser.asm shrinks. Rewrite grammar.md to match SPEC; delete the obsolete cond_* productions.
 - [ ] **B3 — BINOP type checking.** Recursive operand inference; result type = promoted type (int⊕float → float); illegal combinations (string/bool in arithmetic) = semantic error. Replaces the current "type of left operand" logic.
 - [ ] **B4 — Undeclared identifiers.** Per SPEC: a bare identifier in scalar arithmetic context must be declared; a filter/aggregate *source* identifier may be external (collection). Wire up the existing dead `err_not_defined`. Delete the false claim in semantic.asm header if any case remains unchecked.
@@ -47,7 +47,7 @@ Defects below were reproduced against the current build. Write the failing test 
 - [ ] **B9 — Lexical errors.** Distinct message with offending character and line; decide `1.` (trailing dot) per SPEC — recommended: reject, require digit after dot.
 - [ ] **B10 — `path` reserved error (D4).** Semantic stage rejects NODE_RANGE with `error: 'path' expressions are not supported in v1.0` (exit 2); negative test in `tests/`.
 - [ ] **R1 — Repo hygiene.** Untrack `*.o` and binaries; delete stale `parser/parser`; extend `.gitignore`; extract triplicated `TK_*`/`NODE_*` constants into `tokens.inc` / `nodes.inc` (single source, `%include` everywhere).
-- [ ] **R2 — Restructure for 6 stages:** `src/` (all .asm), `tests/`, `docs/`, `data/`, single top-level Makefile. Do it now, not mid-backend.
+- [x] **R2 — Restructure (done out of order, absorbed).** Files moved to `src/` with renamed mains (`lexer_main.asm`, `compi_main.asm`), `docs/`, `data/`; `default abs` added per file to silence NASM's implicit-ABS deprecation. Completed during T1: root Makefile (`build/` objs, `bin/` binaries, `-i src/` for `%include`), rewritten `.gitignore`, three `lea` in symtable.asm made explicitly RIP-relative.
 - **Done when:** `make test` green; each B-item has a test that failed before the fix; README claims match observed behavior.
 
 ## Phase 2 — Stage 4: Intermediate Representation (2 weeks)
