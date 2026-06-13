@@ -219,16 +219,30 @@ sem_walk:
     mov  rdi, [r12 + NODE_RIGHT]
     call sem_infer_type             ;rax = RHS type
 
-    ;skip check if either side is unknown
+    ;skip check if either side is unknown (unresolved CSV column, etc.)
     cmp  r13, SYM_UNKNOWN
     je   .done_pop
     cmp  rax, SYM_UNKNOWN
     je   .done_pop
 
-    ;mismatch?
+    ;equal types compare cleanly (string==string, bool==bool, int==int...)
     cmp  r13, rax
     je   .done_pop
 
+    ;unequal: legal only if BOTH are numeric (int vs float promotion, §3.2)
+    cmp  r13, SYM_INT
+    je   .cmp_lhs_numeric
+    cmp  r13, SYM_FLOAT
+    je   .cmp_lhs_numeric
+    jmp  .cmp_bad                    ;lhs not numeric and types differ
+
+.cmp_lhs_numeric:
+    cmp  rax, SYM_INT
+    je   .done_pop
+    cmp  rax, SYM_FLOAT
+    je   .done_pop
+
+.cmp_bad:
     ;type mismatch error
     mov  rdi, [r12 + NODE_LINE]
     call err_type_mismatch
@@ -251,7 +265,9 @@ sem_walk:
 
 ;
 ;sem_infer_type(rdi = node pointer) -> rax = SYM_* constant
-;Does NOT recurse into children — only inspects node type.
+;Leaf nodes map directly; BINOP/UNOP recurse into operands, apply numeric
+;promotion, and reject illegal operand types (exit 2). Unknown operands
+;(unresolved CSV columns pre-Phase-2) propagate as SYM_UNKNOWN.
 ;
 sem_infer_type:
     test rdi, rdi
@@ -319,18 +335,100 @@ sem_infer_type:
     ret
 
 .t_binop:
-    ;type = type of left operand
-    push rdi
-    mov  rdi, [rdi + NODE_LEFT]
+    ;Recursive operand inference with numeric promotion (SPEC §3.2, §3.3).
+    ;Validates operand legality and exits 2 on an illegal combination.
+    ;r12/r13 preserved by sem_infer_type's callers; use callee-saved here.
+    push r12
+    push r13
+    push r14
+    mov  r14, rdi                   ;r14 = BINOP node
+
+    mov  rdi, [r14 + NODE_LEFT]
     call sem_infer_type
-    pop  rdi
+    mov  r12, rax                   ;r12 = left type
+
+    mov  rdi, [r14 + NODE_RIGHT]
+    call sem_infer_type
+    mov  r13, rax                   ;r13 = right type
+
+    ;If either operand is unknown (e.g. an unresolved CSV column before the
+    ;Phase 2 schema resolver), defer: do not type or reject. Permissive.
+    cmp  r12, SYM_UNKNOWN
+    je   .binop_unknown
+    cmp  r13, SYM_UNKNOWN
+    je   .binop_unknown
+
+    ;Both numeric? int/int -> int; any float -> float (promotion).
+    call .is_numeric_r12
+    jnc  .binop_illegal
+    call .is_numeric_r13
+    jnc  .binop_illegal
+
+    cmp  r12, SYM_FLOAT
+    je   .binop_float
+    cmp  r13, SYM_FLOAT
+    je   .binop_float
+    ;int op int -> int
+    mov  rax, SYM_INT
+    jmp  .binop_done
+
+.binop_float:
+    mov  rax, SYM_FLOAT
+    jmp  .binop_done
+
+.binop_unknown:
+    mov  rax, SYM_UNKNOWN
+.binop_done:
+    pop  r14
+    pop  r13
+    pop  r12
+    ret
+
+.binop_illegal:
+    ;string/bool in arithmetic -> type mismatch at the node's line
+    mov  rdi, [r14 + NODE_LINE]
+    call err_type_mismatch
+    ;never returns
+
+;.is_numeric_r12/r13 -> CF=1 if the type in r12/r13 is INT or FLOAT
+.is_numeric_r12:
+    cmp  r12, SYM_INT
+    je   .num12_yes
+    cmp  r12, SYM_FLOAT
+    je   .num12_yes
+    clc
+    ret
+.num12_yes:
+    stc
+    ret
+.is_numeric_r13:
+    cmp  r13, SYM_INT
+    je   .num13_yes
+    cmp  r13, SYM_FLOAT
+    je   .num13_yes
+    clc
+    ret
+.num13_yes:
+    stc
     ret
 
 .t_unop:
-    push rdi
-    mov  rdi, [rdi + NODE_LEFT]
+    ;unary minus: type of operand; must be numeric if known
+    push r14
+    mov  r14, rdi
+    mov  rdi, [r14 + NODE_LEFT]
     call sem_infer_type
-    pop  rdi
+    cmp  rax, SYM_UNKNOWN
+    je   .unop_done
+    cmp  rax, SYM_INT
+    je   .unop_done
+    cmp  rax, SYM_FLOAT
+    je   .unop_done
+    ;unary minus on string/bool -> error
+    mov  rdi, [r14 + NODE_LINE]
+    call err_type_mismatch
+.unop_done:
+    pop  r14
     ret
 
 ;

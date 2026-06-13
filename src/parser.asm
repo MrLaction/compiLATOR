@@ -1171,8 +1171,10 @@ parse_factor:
     mov  rdi, NODE_LIT_BOOL
     mov  rsi, [tok_line]
     call alloc_node
-    mov  qword [rax + NODE_VALUE], 1
+    mov  r12, rax                   ;save node: advance clobbers rax
+    mov  qword [r12 + NODE_VALUE], 1
     call advance
+    mov  rax, r12
     jmp  .done
 
 .not_true:
@@ -1182,8 +1184,10 @@ parse_factor:
     mov  rdi, NODE_LIT_BOOL
     mov  rsi, [tok_line]
     call alloc_node
-    mov  qword [rax + NODE_VALUE], 0
+    mov  r12, rax                   ;save node: advance clobbers rax
+    mov  qword [r12 + NODE_VALUE], 0
     call advance
+    mov  rax, r12
     jmp  .done
 
 .not_false:
