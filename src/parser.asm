@@ -740,9 +740,14 @@ parse_cond_factor:
     jne  .not_every
     call advance                    ;consume 'every'
 
+    ;require the literal identifier 'element' (SPEC §2), not any TK_ID
     mov  rax, [cur_token]
     cmp  rax, TK_ID
     jne  .syntax_error
+    mov  rdi, [cur_lexeme]
+    lea  rsi, [kw_element]
+    call str_eq                     ;compare before advance overwrites cur_lexeme
+    jnc  .syntax_error
     call advance                    ;consume 'element'
 
     mov  rax, [cur_token]
@@ -750,9 +755,14 @@ parse_cond_factor:
     jne  .syntax_error
     call advance                    ;consume '<='
 
+    ;require the literal identifier 'next' (SPEC §2)
     mov  rax, [cur_token]
     cmp  rax, TK_ID
     jne  .syntax_error
+    mov  rdi, [cur_lexeme]
+    lea  rsi, [kw_next]
+    call str_eq
+    jnc  .syntax_error
     call advance                    ;consume 'next' (critical LL(1) compensation)
 
     mov  rdi, NODE_COND_EVERY
