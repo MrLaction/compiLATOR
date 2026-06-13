@@ -1,0 +1,2 @@
+r is users where price + tax > 100
+t is sum of orders.amount where qty > 5

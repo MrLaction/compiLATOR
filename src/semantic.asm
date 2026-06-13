@@ -136,6 +136,12 @@ sem_walk:
     ;NODE_PROGRAM.left = first NODE_STMT_LIST
     mov  rdi, [r12 + NODE_LEFT]
     call sem_walk
+    ;Pass 2 (B4): symbol table now holds every binding, so forward
+    ;references resolve. Check undeclared scalar identifiers in top-level
+    ;expressions; predicates (where/of) are skipped — their identifiers may
+    ;be CSV columns, unresolvable until the Phase 2 schema resolver.
+    mov  rdi, [r12 + NODE_LEFT]
+    call sem_check_uses
     jmp  .done_pop
 
 .stmt_list:
@@ -429,6 +435,120 @@ sem_infer_type:
     call err_type_mismatch
 .unop_done:
     pop  r14
+    ret
+
+;
+;sem_check_uses(rdi = node) — pass 2 driver (B4)
+;Walks PROGRAM/STMT_LIST/declarations; for each binding RHS, runs
+;sem_check_scalar. Does not itself descend into expressions.
+;
+sem_check_uses:
+    test rdi, rdi
+    jz   .ret
+    push rbp
+    mov  rbp, rsp
+    push r12
+    mov  r12, rdi
+
+    mov  rax, [r12 + NODE_TYPE]
+
+    cmp  rax, NODE_PROGRAM
+    je   .prog
+    cmp  rax, NODE_STMT_LIST
+    je   .slist
+    cmp  rax, NODE_ASSIGN
+    je   .decl
+    cmp  rax, NODE_LET
+    je   .decl
+    jmp  .pop
+
+.prog:
+    mov  rdi, [r12 + NODE_LEFT]
+    call sem_check_uses
+    jmp  .pop
+
+.slist:
+    mov  rdi, [r12 + NODE_LEFT]
+    call sem_check_uses
+    mov  rdi, [r12 + NODE_RIGHT]
+    call sem_check_uses
+    jmp  .pop
+
+.decl:
+    ;check the RHS expression for undeclared scalar identifiers
+    mov  rdi, [r12 + NODE_RIGHT]
+    call sem_check_scalar
+.pop:
+    pop  r12
+    pop  rbp
+.ret:
+    ret
+
+;
+;sem_check_scalar(rdi = expr node) — recurse scalar operands only (B4)
+;Flags a NODE_ID not present in the symbol table. Stops at FILTER/AGGR:
+;their sources and predicates are collection-scoped (external columns),
+;out of scope until Phase 2. Literals and unrelated nodes are inert.
+;
+sem_check_scalar:
+    test rdi, rdi
+    jz   .ret
+    push rbp
+    mov  rbp, rsp
+    push r12
+    mov  r12, rdi
+
+    mov  rax, [r12 + NODE_TYPE]
+
+    cmp  rax, NODE_ID
+    je   .id
+
+    cmp  rax, NODE_BINOP
+    je   .both
+    cmp  rax, NODE_CMP
+    je   .both
+    cmp  rax, NODE_COND_OR
+    je   .both
+    cmp  rax, NODE_COND_AND
+    je   .both
+
+    cmp  rax, NODE_UNOP
+    je   .left_only
+    cmp  rax, NODE_COND_NOT
+    je   .left_only
+
+    ;FILTER, AGGR, RANGE, IN_TEST, IS_EXTREME, literals, ACCESS:
+    ;predicate-scoped or leaf — do not descend.
+    jmp  .pop
+
+.both:
+    mov  rdi, [r12 + NODE_LEFT]
+    call sem_check_scalar
+    mov  rdi, [r12 + NODE_RIGHT]
+    call sem_check_scalar
+    jmp  .pop
+
+.left_only:
+    mov  rdi, [r12 + NODE_LEFT]
+    call sem_check_scalar
+    jmp  .pop
+
+.id:
+    ;identifier in a top-level scalar expression: must be a declared binding
+    mov  rdi, [r12 + NODE_VALUE]    ;name ptr
+    call sym_lookup
+    test rax, rax
+    jnz  .pop                       ;found: ok
+    ;undeclared
+    mov  rdi, [r12 + NODE_VALUE]
+    mov  rsi, [r12 + NODE_LINE]
+    call err_not_defined
+    ;never returns
+
+.pop:
+    pop  r12
+    pop  rbp
+.ret:
     ret
 
 ;
