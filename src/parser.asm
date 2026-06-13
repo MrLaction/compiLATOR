@@ -81,6 +81,8 @@ section .bss
 section .data
     err_unexpected  db "parse error: unexpected token on line ", 0
     err_expected    db "parse error: expected token on line ", 0
+    err_lexical_a   db "lexical error: unexpected character '", 0
+    err_lexical_b   db "' on line ", 0
     err_newline     db 10, 0
     str_syntax_ok   db "syntax OK", 10, 0
 
@@ -108,9 +110,19 @@ advance:
     call intern_str                 ;rax = pointer to interned copy
     mov  [cur_lexeme], rax
 
+    ;B9: a TK_ERROR token is a lexical fault (unknown char, malformed
+    ;float). Report it as lexical, not as a downstream parse error.
+    mov  rax, [cur_token]
+    cmp  rax, TK_ERROR
+    je   .lexical_fault
+
     pop  rbx
     pop  rbp
     ret
+
+.lexical_fault:
+    mov  rdi, [cur_lexeme]
+    call err_lexical                ;does not return
 
 ;expect(token_type) — verify cur_token matches type; call syntax_error if not.
 ;Does NOT call advance. Caller is responsible for advancing before and after.
@@ -160,6 +172,61 @@ syntax_error:
     mov  rax, SYS_EXIT
     mov  rdi, 1
     syscall
+
+;err_lexical(name_ptr) — print lexical error naming the offending lexeme, exit 1
+;rdi = pointer to the offending lexeme string
+err_lexical:
+    push r12
+    mov  r12, rdi                   ;r12 = lexeme ptr
+
+    mov  rdi, STDERR
+    lea  rsi, [err_lexical_a]
+    mov  rdx, 38
+    mov  rax, SYS_WRITE
+    syscall
+
+    ;print the offending lexeme (the unknown char, or "1." for a bad float)
+    mov  rdi, r12
+    call print_cstr
+
+    mov  rdi, STDERR
+    lea  rsi, [err_lexical_b]
+    mov  rdx, 10
+    mov  rax, SYS_WRITE
+    syscall
+
+    mov  rdi, [tok_line]
+    call print_uint
+
+    mov  rdi, STDERR
+    lea  rsi, [err_newline]
+    mov  rdx, 1
+    mov  rax, SYS_WRITE
+    syscall
+
+    mov  rax, SYS_EXIT
+    mov  rdi, 1
+    syscall
+
+;print_cstr(ptr) — write a NUL-terminated string to stderr
+;rdi = pointer
+print_cstr:
+    push rbx
+    mov  rbx, rdi
+    xor  rcx, rcx
+.len:
+    cmp  byte [rbx + rcx], 0
+    je   .out
+    inc  rcx
+    jmp  .len
+.out:
+    mov  rdx, rcx
+    mov  rsi, rbx
+    mov  rdi, STDERR
+    mov  rax, SYS_WRITE
+    syscall
+    pop  rbx
+    ret
 
 ;print_uint(n) — print decimal integer to stderr
 ;rdi = unsigned 64-bit integer

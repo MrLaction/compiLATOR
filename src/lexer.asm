@@ -254,15 +254,16 @@ get_token:
     call append_char
     jmp  .num_int_loop
 .num_dot:
-    ;Consume dot and require at least one digit after it
+    ;Consume dot and require at least one digit after it (SPEC §1).
+    ;A trailing dot with no following digit is a lexical error.
     call append_char
     call next_char
     cmp  al, 0
-    je   .num_is_float
+    je   .num_bad_float
     call is_digit
     jc   .num_float_first_digit
     call putback_char
-    jmp  .num_is_float
+    jmp  .num_bad_float
 .num_float_first_digit:
     call append_char
 .num_float_loop:
@@ -278,6 +279,10 @@ get_token:
     jmp  .num_float_loop
 .num_is_float:
     mov  rax, TK_LIT_FLOAT
+    jmp  .done
+.num_bad_float:
+    ;malformed float such as "1." — flag as lexical error
+    mov  rax, TK_ERROR
     jmp  .done
 .num_is_int:
     mov  rax, TK_LIT_INT
