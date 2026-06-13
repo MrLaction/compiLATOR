@@ -713,17 +713,14 @@ parse_cond_term:
     pop  rbp
     ret
 
-;parse_cond_factor() -> rax
-;cond_factor ::= TK_NOT cond_factor
+;parse_cond_factor() -> rax   (not_expr in SPEC §2)
+;not_expr ::= TK_NOT not_expr
 ;| TK_EVERY 'element' TK_LESS_EQ 'next'
-;| access_expr TK_IN list_literal
-;| access_expr TK_IS agg_op
-;| comparison
+;| rel_expr
 parse_cond_factor:
     push rbp
     mov  rbp, rsp
     push r12
-    push r13
 
     mov  rax, [cur_token]
 
@@ -741,17 +738,17 @@ parse_cond_factor:
 .not_not:
     cmp  rax, TK_EVERY
     jne  .not_every
-    call advance                    ;Consume 'every'
+    call advance                    ;consume 'every'
 
     mov  rax, [cur_token]
     cmp  rax, TK_ID
     jne  .syntax_error
-    call advance                    ;Consume 'element'
+    call advance                    ;consume 'element'
 
     mov  rax, [cur_token]
     cmp  rax, TK_LESS_EQ
     jne  .syntax_error
-    call advance                    ;Consume '<='
+    call advance                    ;consume '<='
 
     mov  rax, [cur_token]
     cmp  rax, TK_ID
@@ -764,16 +761,38 @@ parse_cond_factor:
     jmp  .done
 
 .not_every:
+    call parse_rel_expr
+
+.done:
+    pop  r12
+    pop  rbp
+    ret
+
+.syntax_error:
+    mov  rdi, TK_ID
+    call syntax_error
+
+;parse_rel_expr() -> rax   (rel_expr in SPEC §2, non-associative)
+;rel_expr ::= add_expr ( relop add_expr
+;                      | TK_IN list_literal
+;                      | TK_IS (TK_MIN|TK_MAX) )?
+;Exactly one trailing operator: a < b < c is a syntax error by construction.
+parse_rel_expr:
+    push rbp
+    mov  rbp, rsp
+    push r12
+    push r13
+
     call parse_arith_expr
-    mov  r12, rax                   ;r12 = LHS (arith_expr, covers access_expr as degenerate case)
+    mov  r12, rax                   ;r12 = LHS (add_expr)
 
     mov  rax, [cur_token]
+
     cmp  rax, TK_IN
     jne  .not_in
-    call advance                    ;Consume 'in'
+    call advance                    ;consume 'in'
     call parse_list_literal
-    mov  r13, rax                   ;r13 = list_literal node
-
+    mov  r13, rax
     mov  rdi, NODE_IN_TEST
     mov  rsi, [tok_line]
     call alloc_node
@@ -783,22 +802,18 @@ parse_cond_factor:
 
 .not_in:
     cmp  rax, TK_IS
-    jne  .not_is_extreme
-    call advance                    ;Consume 'is'
-
+    jne  .not_is
+    call advance                    ;consume 'is'
     mov  rax, [cur_token]
     cmp  rax, TK_MIN
     je   .is_extreme
     cmp  rax, TK_MAX
     je   .is_extreme
-
     mov  rdi, TK_MIN
     call syntax_error
-
 .is_extreme:
     mov  r13, rax                   ;r13 = MIN/MAX token
-    call advance                    ;Consume el extremo
-
+    call advance
     mov  rdi, NODE_IS_EXTREME
     mov  rsi, [tok_line]
     call alloc_node
@@ -806,73 +821,38 @@ parse_cond_factor:
     mov  qword [rax + NODE_VALUE], r13
     jmp  .done
 
-.not_is_extreme:
-    mov  rdi, r12                   ;rdi = LHS handed to the comparison
-    call parse_comparison_with_lhs
+.not_is:
+    ;relop? if none, this is a bare boolean primary (e.g. where active)
+    cmp  rax, TK_EQUAL
+    je   .relop
+    cmp  rax, TK_NEQ
+    je   .relop
+    cmp  rax, TK_LESS
+    je   .relop
+    cmp  rax, TK_GREATER
+    je   .relop
+    cmp  rax, TK_LESS_EQ
+    je   .relop
+    cmp  rax, TK_GREATER_EQ
+    je   .relop
+    ;no trailing operator: pass the bare add_expr through unchanged
+    mov  rax, r12
     jmp  .done
 
-.syntax_error:
-    mov  rdi, TK_ID
-    call syntax_error
-
-.done:
-    pop  r13
-    pop  r12
-    pop  rbp
-    ret
-
-;parse_comparison_with_lhs(lhs) -> rax = NODE_CMP
-;rdi = already-parsed lhs node pointer
-;comparison ::= access_expr relop access_expr
-parse_comparison_with_lhs:
-    push rbp
-    mov  rbp, rsp
-    push r12
-    push r13
-    push r14
-
-    mov  r12, rdi                   ;r12 = left-hand side node (LHS)
-
-    ;Validar y guardar el operador relacional (relop)
-    mov  rax, [cur_token]
-    cmp  rax, TK_EQUAL
-    je   .got_op
-    cmp  rax, TK_NEQ
-    je   .got_op
-    cmp  rax, TK_LESS
-    je   .got_op
-    cmp  rax, TK_GREATER
-    je   .got_op
-    cmp  rax, TK_LESS_EQ
-    je   .got_op
-    cmp  rax, TK_GREATER_EQ
-    je   .got_op
-
-    mov  rdi, TK_EQUAL
-    call syntax_error
-
-.got_op:
-    mov  r13, rax                   ;r13 = relational operator token
-    call advance                    ;Consumimos el operador relacional
-
-    ;Parse the right-hand side (RHS).
-    ;parse_factor: the RHS may be an ID or a literal (e.g. 18 or "food")
-    call parse_factor
-    mov  r14, rax                   ;r14 = right-hand side node (RHS)
-
-    ;Lookahead already compensated: parse_factor calls advance after reading
-    ;the literal/ID, so cur_token already points at the following control
-    ;token (TK_NEWLINE, TK_AND or TK_OR). Do NOT advance here.
-
-    ;build the NODE_CMP comparison node
+.relop:
+    mov  r13, rax                   ;r13 = relop token
+    call advance
+    call parse_arith_expr           ;RHS is a full add_expr (SPEC §2)
     mov  rdi, NODE_CMP
+    push rax
     mov  rsi, [tok_line]
     call alloc_node
-    mov  qword [rax + NODE_LEFT],  r12  ;Miembro izquierdo (LHS)
-    mov  qword [rax + NODE_RIGHT], r14  ;Miembro derecho (RHS)
-    mov  qword [rax + NODE_VALUE], r13  ;operator token
+    pop  rdx                        ;rdx = RHS node
+    mov  qword [rax + NODE_LEFT],  r12
+    mov  qword [rax + NODE_RIGHT], rdx
+    mov  qword [rax + NODE_VALUE], r13
 
-    pop  r14
+.done:
     pop  r13
     pop  r12
     pop  rbp
@@ -1108,11 +1088,13 @@ parse_factor:
 
     mov  rax, [cur_token]
 
-    ;parenthesized expression
+    ;parenthesized expression: opens the full ladder top (or_expr via
+    ;parse_condition), so (a > 1) and ... parses; ill-typed nestings like
+    ;(a > b) + 1 are rejected by the type checker (B3), not the grammar.
     cmp  rax, TK_LPAREN
     jne  near .not_paren
     call advance
-    call parse_expr
+    call parse_condition
     mov  r12, rax
     ;expect RPAREN
     mov  rax, [cur_token]
