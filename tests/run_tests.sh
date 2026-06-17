@@ -27,7 +27,7 @@ run_case() {  # $1=file.lator -> sets CHECK_OK, fills DETAIL
     local want_exit; want_exit="$(cat "$base.exit")"
     local out err code
     out="$(cd "$ROOT/tests" && "$COMPI" "$f" 2>/tmp/case_err)"; code=$?
-    err="$(cat /tmp/case_err)"
+    err="$(tr -d '\000' < /tmp/case_err)"
     CHECK_OK=1; DETAIL=""
     if [ "$code" -ne "$want_exit" ]; then
         CHECK_OK=0; DETAIL="exit $code, expected $want_exit"
