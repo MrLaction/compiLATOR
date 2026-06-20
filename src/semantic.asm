@@ -64,6 +64,7 @@ section .data
     err_redecl_b  db "' already declared on line ", 0
     err_undef_b   db "' is not defined on line ", 0
     err_mismatch  db "semantic error: type mismatch on line ", 0
+    err_path      db "semantic error: 'path' is not supported in v1.0 on line ", 0
     err_nl        db 10, 0
 
 section .text
@@ -129,7 +130,10 @@ sem_walk:
     cmp  rax, NODE_ID
     je   .id_node
 
-    ;literals, EVERY, RANGE, ACCESS, IS_EXTREME: no checks needed
+    cmp  rax, NODE_RANGE
+    je   .range_node
+
+    ;literals, EVERY, ACCESS, IS_EXTREME: no checks needed
     jmp  .done_pop
 
 .program:
@@ -261,6 +265,14 @@ sem_walk:
     ;a prior declaration exists with a non-collection type.
     ;For now: silently accept all identifiers — redeclaration is caught at assignment.
     jmp  .done_pop
+
+.range_node:
+    ;path/range expressions are reserved in v1.0 (D4): grammar still parses
+    ;them, but the semantic stage rejects them. Caught here regardless of
+    ;nesting since NODE_RANGE is never a valid subexpression.
+    mov  rdi, [r12 + NODE_LINE]
+    call err_path_unsupported
+    ;never returns
 
 .done_pop:
     pop  r13
@@ -606,6 +618,23 @@ err_type_mismatch:
 
     lea  rdi, [err_mismatch]
     call print_str          ;"semantic error: type mismatch on line "
+    mov  rdi, r12
+    call print_uint_nl
+
+    mov  rax, SYS_EXIT
+    mov  rdi, 2
+    syscall
+
+;
+;err_path_unsupported(rdi = line)
+;'path' expressions are reserved in v1.0 (D4); reject with exit 2.
+;
+err_path_unsupported:
+    push r12
+    mov  r12, rdi
+
+    lea  rdi, [err_path]
+    call print_str          ;"semantic error: 'path' is not supported in v1.0 on line "
     mov  rdi, r12
     call print_uint_nl
 
