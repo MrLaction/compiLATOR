@@ -1293,3 +1293,7 @@ parse_integer:
 .done:
     pop  rbx
     ret
+
+;AST pretty-printer for -v (defines dump_ast). Included last so it can
+;reference the NODE_* and TK_* constants declared above.
+%include "astdump.asm"

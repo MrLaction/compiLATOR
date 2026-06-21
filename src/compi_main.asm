@@ -23,6 +23,7 @@ STDIN      equ 0
 
 extern parse_program
 extern sem_walk
+extern dump_ast
 
 section .data
     str_ok        db "syntax OK", 10, 0
@@ -101,6 +102,14 @@ _start:
     lea  rsi, [str_ok]
     mov  rdx, str_ok_len
     syscall
+
+    ;-v: print the parsed AST before semantic analysis
+    cmp  byte [flag_verbose], 1
+    jne  .skip_dump
+    mov  rdi, r15           ;root AST node
+    xor  rsi, rsi           ;depth 0
+    call dump_ast
+.skip_dump:
 
     ;skip semantic if -s flag
     cmp  byte [flag_synonly], 1
