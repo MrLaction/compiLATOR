@@ -15,46 +15,11 @@ SYS_WRITE  equ 1
 SYS_EXIT   equ 60
 STDERR     equ 2
 
-; Node type constants (must match ast.asm)
-NODE_PROGRAM    equ 1
-NODE_ASSIGN     equ 2
-NODE_LET        equ 3
-NODE_FILTER     equ 4
-NODE_COND_OR    equ 5
-NODE_COND_AND   equ 6
-NODE_COND_NOT   equ 7
-NODE_COND_EVERY equ 8
-NODE_CMP        equ 9
-NODE_IN_TEST    equ 10
-NODE_IS_EXTREME equ 11
-NODE_BINOP      equ 12
-NODE_UNOP       equ 13
-NODE_AGGR       equ 14
-NODE_RANGE      equ 15
-NODE_LIST       equ 16
-NODE_ACCESS     equ 17
-NODE_ID         equ 18
-NODE_LIT_INT    equ 19
-NODE_LIT_FLOAT  equ 20
-NODE_LIT_STR    equ 21
-NODE_LIT_BOOL   equ 22
-NODE_STMT_LIST  equ 23
+; Node-type tags and field offsets (shared)
+%include "nodes.inc"
 
-; AST node field offsets (must match ast.asm)
-NODE_TYPE  equ 0
-NODE_LEFT  equ 8
-NODE_RIGHT equ 16
-NODE_VALUE equ 24
-NODE_LINE  equ 32
-
-; Symbol types (must match symtable.asm)
-SYM_UNKNOWN    equ 0
-SYM_INT        equ 1
-SYM_FLOAT      equ 2
-SYM_BOOL       equ 3
-SYM_STRING     equ 4
-SYM_COLLECTION equ 5
-SYM_TYPE       equ 8   ;offset within sym entry
+; Symbol-table type tags (shared)
+%include "symbols.inc"
 
 extern sym_insert
 extern sym_lookup

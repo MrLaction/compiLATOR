@@ -10,19 +10,7 @@ default abs
 
 global SYM_UNKNOWN, SYM_INT, SYM_FLOAT, SYM_BOOL, SYM_STRING, SYM_COLLECTION
 
-SYM_UNKNOWN    equ 0
-SYM_INT        equ 1
-SYM_FLOAT      equ 2
-SYM_BOOL       equ 3
-SYM_STRING     equ 4
-SYM_COLLECTION equ 5
-
-; Table layout
-SYM_ENTRY_SIZE equ 32
-SYM_CAPACITY   equ 256
-SYM_NAME       equ 0
-SYM_TYPE       equ 8
-SYM_LINE       equ 16
+%include "symbols.inc"
 
 section .bss
     sym_table resb SYM_CAPACITY * SYM_ENTRY_SIZE
