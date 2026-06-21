@@ -59,10 +59,12 @@ sym_lookup:
     push rbx
     push r12
     push r13
+    push r14
 
     mov  r12, rdi           ;r12 = name_ptr
     call sym_hash           ;rax = starting bucket index
     mov  rbx, rax           ;rbx = current index
+    xor  r14, r14           ;probe counter (full-table guard)
 
 .probe:
     ;compute entry pointer
@@ -83,11 +85,9 @@ sym_lookup:
     ;linear probe: advance to next bucket
     inc  rbx
     and  rbx, 0xFF          ;wrap at 256
-    mov  rax, rbx
-    imul rax, rax, SYM_ENTRY_SIZE
-    lea  rcx, [rel sym_table]
-    add  rcx, rax
-    ;check if we looped all the way around (shouldn't happen if load < 100%)
+    inc  r14
+    cmp  r14, SYM_CAPACITY  ;looped the whole table, key absent: stop
+    jae  .not_found
     jmp  .probe
 
 .found:
@@ -96,6 +96,7 @@ sym_lookup:
 .not_found:
     xor  rax, rax
 .ret:
+    pop  r14
     pop  r13
     pop  r12
     pop  rbx
@@ -126,6 +127,7 @@ sym_insert:
     mov  rdi, r12
     call sym_hash
     mov  rbx, rax
+    xor  rcx, rcx           ;probe counter (full-table guard)
 
 .find_empty:
     imul rax, rbx, SYM_ENTRY_SIZE
@@ -137,6 +139,9 @@ sym_insert:
 
     inc  rbx
     and  rbx, 0xFF
+    inc  rcx
+    cmp  rcx, SYM_CAPACITY  ;table full: no slot to insert into
+    jae  .table_full
     jmp  .find_empty
 
 .insert:
@@ -148,6 +153,12 @@ sym_insert:
 
 .redecl:
     mov  rax, 1             ;return 1 = redeclaration
+    jmp  .ret
+
+.table_full:
+    mov  rax, 60            ;SYS_EXIT
+    mov  rdi, 96            ;exit 96 = symbol table full
+    syscall
 
 .ret:
     pop  r15
@@ -159,14 +170,15 @@ sym_insert:
 
 ;
 ;str_eq(rdi = a, rsi = b) -> CF=1 if equal, CF=0 if not
-;
+;Uses scratch dl, not bl: sym_lookup keeps its probe index in rbx across
+;the call, and writing bl would corrupt it into an infinite probe loop.
 str_eq:
     push rcx
     xor  rcx, rcx
 .loop:
     mov  al, [rdi + rcx]
-    mov  bl, [rsi + rcx]
-    cmp  al, bl
+    mov  dl, [rsi + rcx]
+    cmp  al, dl
     jne  .no
     test al, al
     jz   .yes
@@ -180,4 +192,3 @@ str_eq:
     clc
     pop  rcx
     ret
-
